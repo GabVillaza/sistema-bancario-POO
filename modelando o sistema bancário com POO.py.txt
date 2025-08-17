@@ -1,0 +1,237 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+import unittest
+
+
+# ---------------------------
+# Histórico de Transações
+# ---------------------------
+class Historico:
+    def __init__(self):
+        self.transacoes = []
+
+    def adicionar_transacao(self, transacao):
+        self.transacoes.append(
+            {"tipo": transacao.__class__.__name__, "valor": transacao.valor, "data": datetime.now()}
+        )
+
+    def listar(self):
+        for t in self.transacoes:
+            print(f"{t['data'].strftime('%d/%m/%Y %H:%M:%S')} - {t['tipo']}: R$ {t['valor']:.2f}")
+
+
+# ---------------------------
+# Transações
+# ---------------------------
+class Transacao(ABC):
+    @abstractmethod
+    def registrar(self, conta):
+        pass
+
+
+class Deposito(Transacao):
+    def __init__(self, valor):
+        self.valor = valor
+
+    def registrar(self, conta):
+        sucesso = conta.depositar(self.valor)
+        if sucesso:
+            conta.historico.adicionar_transacao(self)
+
+
+class Saque(Transacao):
+    def __init__(self, valor):
+        self.valor = valor
+
+    def registrar(self, conta):
+        sucesso = conta.sacar(self.valor)
+        if sucesso:
+            conta.historico.adicionar_transacao(self)
+
+
+# ---------------------------
+# Conta
+# ---------------------------
+class Conta:
+    def __init__(self, cliente, numero):
+        self.saldo = 0.0
+        self.numero = numero
+        self.agencia = "0001"
+        self.cliente = cliente
+        self.historico = Historico()
+
+    def saldo_conta(self):
+        return self.saldo
+
+    def sacar(self, valor):
+        if valor > self.saldo:
+            print("Saldo insuficiente!")
+            return False
+        self.saldo -= valor
+        return True
+
+    def depositar(self, valor):
+        if valor <= 0:
+            print("Valor inválido para depósito!")
+            return False
+        self.saldo += valor
+        return True
+
+    @classmethod
+    def nova_conta(cls, cliente, numero):
+        return cls(cliente, numero)
+
+
+class ContaCorrente(Conta):
+    def __init__(self, cliente, numero, limite=500, limite_saques=3):
+        super().__init__(cliente, numero)
+        self.limite = limite
+        self.limite_saques = limite_saques
+        self.numero_saques = 0
+
+    def sacar(self, valor):
+        if valor > self.limite:
+            print("Valor excede o limite permitido!")
+            return False
+        if self.numero_saques >= self.limite_saques:
+            print("Limite de saques atingido!")
+            return False
+        if super().sacar(valor):
+            self.numero_saques += 1
+            return True
+        return False
+
+
+# ---------------------------
+# Cliente
+# ---------------------------
+class Cliente:
+    def __init__(self, endereco):
+        self.endereco = endereco
+        self.contas = []
+
+    def realizar_transacao(self, conta, transacao):
+        transacao.registrar(conta)
+
+    def adicionar_conta(self, conta):
+        self.contas.append(conta)
+
+
+class PessoaFisica(Cliente):
+    def __init__(self, nome, cpf, data_nascimento, endereco):
+        super().__init__(endereco)
+        self.nome = nome
+        self.cpf = cpf
+        self.data_nascimento = data_nascimento
+
+
+# ---------------------------
+# Menu
+# ---------------------------
+def menu():
+    clientes = []
+    contas = []
+    numero_conta = 1
+
+    while True:
+        print("\n=== Sistema Bancário POO ===")
+        print("1 - Novo Cliente")
+        print("2 - Nova Conta")
+        print("3 - Depositar")
+        print("4 - Sacar")
+        print("5 - Extrato")
+        print("0 - Sair")
+        opcao = input("Escolha: ")
+
+        if opcao == "1":
+            nome = input("Nome: ")
+            cpf = input("CPF: ")
+            data_nasc = input("Data de nascimento (dd/mm/aaaa): ")
+            endereco = input("Endereço: ")
+            cliente = PessoaFisica(nome, cpf, data_nasc, endereco)
+            clientes.append(cliente)
+            print("✅ Cliente criado com sucesso!")
+
+        elif opcao == "2":
+            cpf = input("CPF do cliente: ")
+            cliente = next((c for c in clientes if c.cpf == cpf), None)
+            if not cliente:
+                print("Cliente não encontrado!")
+                continue
+            conta = ContaCorrente(cliente, numero_conta)
+            cliente.adicionar_conta(conta)
+            contas.append(conta)
+            numero_conta += 1
+            print("✅ Conta criada com sucesso!")
+
+        elif opcao == "3":
+            cpf = input("CPF do cliente: ")
+            cliente = next((c for c in clientes if c.cpf == cpf), None)
+            if not cliente or not cliente.contas:
+                print("Cliente/Conta não encontrado!")
+                continue
+            valor = float(input("Valor do depósito: "))
+            transacao = Deposito(valor)
+            cliente.realizar_transacao(cliente.contas[0], transacao)
+
+        elif opcao == "4":
+            cpf = input("CPF do cliente: ")
+            cliente = next((c for c in clientes if c.cpf == cpf), None)
+            if not cliente or not cliente.contas:
+                print("Cliente/Conta não encontrado!")
+                continue
+            valor = float(input("Valor do saque: "))
+            transacao = Saque(valor)
+            cliente.realizar_transacao(cliente.contas[0], transacao)
+
+        elif opcao == "5":
+            cpf = input("CPF do cliente: ")
+            cliente = next((c for c in clientes if c.cpf == cpf), None)
+            if not cliente or not cliente.contas:
+                print("Cliente/Conta não encontrado!")
+                continue
+            conta = cliente.contas[0]
+            print(f"Saldo atual: R$ {conta.saldo:.2f}")
+            print("Histórico:")
+            conta.historico.listar()
+
+        elif opcao == "0":
+            print("Saindo...")
+            break
+
+        else:
+            print("Opção inválida!")
+
+
+# ---------------------------
+# Testes Unitários
+# ---------------------------
+class TestSistemaBancario(unittest.TestCase):
+
+    def setUp(self):
+        self.cliente = PessoaFisica("João", "12345678900", "01/01/1990", "Rua A")
+        self.conta = ContaCorrente(self.cliente, 1)
+
+    def test_deposito(self):
+        deposito = Deposito(100)
+        self.cliente.realizar_transacao(self.conta, deposito)
+        self.assertEqual(self.conta.saldo, 100)
+
+    def test_saque(self):
+        self.conta.depositar(200)
+        saque = Saque(100)
+        self.cliente.realizar_transacao(self.conta, saque)
+        self.assertEqual(self.conta.saldo, 100)
+
+    def test_saque_sem_saldo(self):
+        saque = Saque(50)
+        self.cliente.realizar_transacao(self.conta, saque)
+        self.assertEqual(self.conta.saldo, 0)
+
+
+if __name__ == "__main__":
+    # Se quiser rodar os testes, descomente a linha abaixo:
+    # unittest.main()
+
+    # Se quiser rodar o sistema interativo, deixe o menu ativo:
+    menu()
